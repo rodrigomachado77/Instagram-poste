@@ -109,7 +109,11 @@ async function handleMessage(msg) {
     }
     const p = pending.get(from) || { images: [], caption: '' };
     pending.set(from, p);
-    if (p.images.length >= 10) return reply(from, '⚠️ O Instagram aceita no máximo 10 fotos por carrossel; ignorei as extras.');
+    if (p.images.length >= 10) {
+      if (p.warned) return;
+      p.warned = true;
+      return reply(from, '⚠️ O Instagram aceita no máximo 10 fotos por carrossel; ignorei as extras.');
+    }
     p.images.push(media.id);
     if (media.caption && !p.caption) p.caption = media.caption;
     return schedule(from);

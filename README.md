@@ -41,7 +41,8 @@ As fotos ficam no servidor por 24h e depois são apagadas.
    As permissões necessárias são `instagram_business_basic` e `instagram_business_content_publish`.
 5. Copie o token, que vai em `IG_ACCESS_TOKEN`.
 
-> O token do Instagram dura cerca de 60 dias. Para renová-lo antes de vencer:
+> O token do Instagram dura cerca de 60 dias. O app tenta renová-lo sozinho ao iniciar e uma vez por dia (veja o log *Token do Instagram renovado*).
+> Se o app ficar parado por mais de 60 dias, gere um token novo. Para renovar manualmente:
 > `curl "https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=SEU_TOKEN"`
 
 ## 2. WhatsApp (no mesmo app da Meta)
@@ -69,7 +70,8 @@ As fotos ficam no servidor por 24h e depois são apagadas.
 
 O app precisa estar na internet por dois motivos: o Instagram **baixa a foto de um link público** e o WhatsApp precisa chamar o webhook. Algumas opções fáceis:
 
-- **Render** (render.com): *New → Web Service*, conecte o repositório, start command `npm start`
+- **Render** (render.com): *New → Blueprint*, escolha este repositório. O `render.yaml` já configura tudo e pede as variáveis.
+  O `WA_VERIFY_TOKEN` é gerado sozinho; copie o valor no painel do Render para usar no passo 2.6.
 - **Railway** (railway.app) ou **Fly.io**: funcionam do mesmo jeito
 
 Configure as variáveis de ambiente conforme o `.env.example`. Em `PUBLIC_BASE_URL`, coloque o endereço do app, ex.: `https://meu-app.onrender.com`.
@@ -90,4 +92,5 @@ Com `DRY_RUN=true`, o app processa as fotos e responde no WhatsApp, mas **não p
 
 - Até 100 publicações pela API a cada 24h
 - Só fotos (JPEG); vídeos e Reels não são suportados nesta versão
+- No carrossel, todas as fotos ficam com a proporção da primeira (o app recorta mantendo a parte mais importante)
 - Legenda de no máximo 2.200 caracteres e 30 hashtags

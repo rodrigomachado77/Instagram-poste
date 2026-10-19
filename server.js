@@ -24,6 +24,9 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, file.mimetype.startsWith('image/')),
 });
 
+// Usado pela hospedagem (ex.: Render) para saber se o app está no ar.
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
 // O Instagram baixa as fotos daqui, por isso esta pasta precisa ser pública.
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1h' }));
 

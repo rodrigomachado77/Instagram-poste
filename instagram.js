@@ -19,15 +19,15 @@ const UPLOAD_DIR = path.join(__dirname, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // O Instagram só aceita JPEG com proporção entre 4:5 (retrato) e 1.91:1 (paisagem).
-async function prepareImage(buffer) {
+// forceRatio: no carrossel, todas as fotos usam a proporção da primeira (senão o Instagram corta pelo centro).
+async function prepareImage(buffer, forceRatio) {
   const img = sharp(buffer, { failOn: 'none' }).rotate(); // aplica a orientação EXIF
   const { width, height } = await img.metadata().then(
     (m) => (m.orientation >= 5 ? { width: m.height, height: m.width } : m),
     () => { throw new Error('Formato de imagem não suportado. Se for HEIC do iPhone, envie como JPEG.'); }
   );
-  let ratio = width / height;
-  ratio = Math.min(Math.max(ratio, 0.8), 1.91);
-  const outW = Math.min(1440, width);
+  const ratio = forceRatio || Math.min(Math.max(width / height, 0.8), 1.91);
+  const outW = Math.min(1440, width, Math.round(height * ratio));
   const outH = Math.round(outW / ratio);
 
   const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
@@ -36,12 +36,30 @@ async function prepareImage(buffer) {
     .jpeg({ quality: 90, mozjpeg: true })
     .toFile(path.join(UPLOAD_DIR, name));
   const base = (PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
-  return `${base}/uploads/${name}`;
+  return { url: `${base}/uploads/${name}`, ratio };
 }
+
+// O token do Instagram vence em ~60 dias; renovar estende a validade. Roda ao iniciar e uma vez por dia.
+let accessToken = IG_ACCESS_TOKEN;
+async function refreshToken() {
+  if (dryRun || !accessToken || GRAPH_HOST !== 'graph.instagram.com') return;
+  try {
+    const url = new URL('https://graph.instagram.com/refresh_access_token');
+    url.search = new URLSearchParams({ grant_type: 'ig_refresh_token', access_token: accessToken });
+    const data = await (await fetch(url)).json();
+    if (data.error) throw new Error(data.error.message);
+    accessToken = data.access_token;
+    console.log(`Token do Instagram renovado; vale por mais ${Math.round(data.expires_in / 86400)} dias.`);
+  } catch (err) {
+    console.error('Não consegui renovar o token do Instagram:', err.message);
+  }
+}
+refreshToken();
+setInterval(refreshToken, 24 * 60 * 60 * 1000).unref();
 
 async function graph(method, endpoint, params = {}) {
   const url = new URL(`https://${GRAPH_HOST}/${GRAPH_API_VERSION}/${endpoint}`);
-  const body = new URLSearchParams({ ...params, access_token: IG_ACCESS_TOKEN });
+  const body = new URLSearchParams({ ...params, access_token: accessToken });
   let res;
   if (method === 'GET') {
     url.search = body.toString();
@@ -101,7 +119,12 @@ async function publish(buffers, caption, mode = 'carousel') {
   if (buffers.length === 1) mode = 'separate';
 
   const urls = [];
-  for (const b of buffers) urls.push(await prepareImage(b));
+  let ratio;
+  for (const b of buffers) {
+    const img = await prepareImage(b, mode === 'carousel' ? ratio : undefined);
+    ratio = img.ratio;
+    urls.push(img.url);
+  }
 
   if (dryRun) {
     console.log('[DRY_RUN] publicaria:', { mode, caption, urls });
