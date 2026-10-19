@@ -151,6 +151,7 @@ router.post('/', express.raw({ type: '*/*' }), (req, res) => {
     const expected = 'sha256=' + crypto.createHmac('sha256', WA_APP_SECRET).update(req.body).digest('hex');
     const given = String(req.get('x-hub-signature-256') || '');
     if (given.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
+      console.warn('Webhook recusado: assinatura inválida. Confira se WA_APP_SECRET é a "Chave secreta do app" (Configurações do app → Básico).');
       return res.sendStatus(401);
     }
   }
@@ -161,7 +162,15 @@ router.post('/', express.raw({ type: '*/*' }), (req, res) => {
   for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
       for (const msg of change.value?.messages || []) {
+        console.log(`Mensagem recebida de ${msg.from} (${msg.type})`);
         handleMessage(msg).catch((err) => console.error(err));
+      }
+      // Respostas que a Meta aceitou mas não conseguiu entregar chegam aqui.
+      for (const st of change.value?.statuses || []) {
+        if (st.status === 'failed') {
+          const e = st.errors?.[0];
+          console.error(`Resposta não entregue para ${st.recipient_id}: ${e?.code} ${e?.title}`);
+        }
       }
     }
   }
