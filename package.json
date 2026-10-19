@@ -1,0 +1,21 @@
+{
+  "name": "instagram-auto-poster",
+  "version": "1.0.0",
+  "description": "Envie fotos e publique automaticamente no Instagram",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "multer": "^2.4.0",
+    "sharp": "^0.35.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

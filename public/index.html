@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Postar no Instagram</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#c13584">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Postar IG">
+  <link rel="apple-touch-icon" href="icon.png">
+  <style>
+    :root {
+      --bg: #f6f6f8; --card: #fff; --text: #1a1a1f; --muted: #6b6b76;
+      --border: #e2e2e8; --accent: #c13584; --ok: #1f8a4c; --err: #c0392b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111114; --card: #1c1c21; --text: #f1f1f4; --muted: #9a9aa5; --border: #2e2e36; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.4rem; margin: 0 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input[type=password], textarea { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+    textarea { min-height: 110px; resize: vertical; }
+    .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 140px; border: 2px dashed var(--border); border-radius: 12px; cursor: pointer; text-align: center; color: var(--muted); padding: 16px; }
+    .drop strong { color: var(--text); font-size: 1.05rem; }
+    .drop input { display: none; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+    .grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+    .modes { display: flex; gap: 8px; margin-top: 12px; }
+    .modes label { flex: 1; font-weight: 500; border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; cursor: pointer; margin: 0; }
+    .modes input { display: none; }
+    .modes input:checked + span { color: var(--accent); font-weight: 700; }
+    .modes label:has(input:checked) { border-color: var(--accent); }
+    button { width: 100%; padding: 14px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font: 600 1.05rem system-ui, sans-serif; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .msg { margin-top: 12px; padding: 12px; border-radius: 10px; display: none; word-break: break-word; }
+    .msg.ok { display: block; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .msg.err { display: block; background: color-mix(in srgb, var(--err) 15%, transparent); color: var(--err); }
+    .msg a { color: inherit; font-weight: 600; }
+    .hidden { display: none; }
+    .muted { color: var(--muted); font-size: .9rem; }
+    .link { background: none; color: var(--muted); padding: 6px; font-size: .9rem; font-weight: 400; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>📸 Postar no Instagram</h1>
+
+  <section id="login" class="card hidden">
+    <label for="pw">Senha do app</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <div style="height:12px"></div>
+    <button id="loginBtn">Entrar</button>
+    <div id="loginMsg" class="msg"></div>
+  </section>
+
+  <form id="form" class="hidden">
+    <div class="card">
+      <label class="drop">
+        <strong>Toque para escolher fotos</strong>
+        <span class="muted">Até 10 fotos · da galeria ou da câmera</span>
+        <input id="photos" type="file" accept="image/*" multiple>
+      </label>
+      <div id="preview" class="grid"></div>
+      <div id="modes" class="modes hidden">
+        <label><input type="radio" name="mode" value="carousel" checked><span>Um carrossel</span></label>
+        <label><input type="radio" name="mode" value="separate"><span>Posts separados</span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <label for="caption">Legenda</label>
+      <textarea id="caption" maxlength="2200" placeholder="Escreva a legenda, #hashtags..."></textarea>
+    </div>
+
+    <button id="sendBtn" type="submit">Publicar no Instagram</button>
+    <div id="msg" class="msg"></div>
+    <button type="button" id="logout" class="link">Sair</button>
+  </form>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get: () => { try { return localStorage.getItem('pw') || ''; } catch { return ''; } },
+    set: (v) => { try { v ? localStorage.setItem('pw', v) : localStorage.removeItem('pw'); } catch {} },
+  };
+  let password = store.get();
+
+  function show(el, type, html) { el.className = 'msg ' + type; el.innerHTML = html; }
+
+  async function check(pw) {
+    const r = await fetch('api/check', { method: 'POST', headers: { 'x-app-password': pw } });
+    return r.ok;
+  }
+
+  function showForm(on) {
+    $('login').classList.toggle('hidden', on);
+    $('form').classList.toggle('hidden', !on);
+  }
+
+  (async () => showForm(password && await check(password)))();
+
+  $('loginBtn').onclick = async () => {
+    const pw = $('pw').value;
+    if (await check(pw)) { password = pw; store.set(pw); showForm(true); }
+    else show($('loginMsg'), 'err', 'Senha incorreta.');
+  };
+  $('pw').onkeydown = (e) => { if (e.key === 'Enter') $('loginBtn').click(); };
+  $('logout').onclick = () => { store.set(''); password = ''; showForm(false); };
+
+  $('photos').onchange = () => {
+    const files = [...$('photos').files].slice(0, 10);
+    $('preview').innerHTML = '';
+    files.forEach((f) => {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      $('preview').appendChild(img);
+    });
+    $('modes').classList.toggle('hidden', files.length < 2);
+    $('msg').className = 'msg';
+  };
+
+  $('form').onsubmit = async (e) => {
+    e.preventDefault();
+    const files = [...$('photos').files].slice(0, 10);
+    if (!files.length) return show($('msg'), 'err', 'Escolha pelo menos uma foto.');
+
+    const data = new FormData();
+    files.forEach((f) => data.append('photos', f));
+    data.append('caption', $('caption').value);
+    data.append('mode', document.querySelector('input[name=mode]:checked').value);
+
+    const btn = $('sendBtn');
+    btn.disabled = true; btn.textContent = 'Publicando… (pode levar até 1 min)';
+    try {
+      const r = await fetch('api/post', { method: 'POST', headers: { 'x-app-password': password }, body: data });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Erro desconhecido');
+      const links = json.posts.map((p) => p.permalink ? `<a href="${p.permalink}" target="_blank" rel="noopener">ver post</a>` : 'publicado').join(' · ');
+      show($('msg'), 'ok', (json.dryRun ? '✅ Teste OK (nada foi publicado de verdade): ' : '✅ Publicado! ') + links);
+      $('form').reset(); $('preview').innerHTML = ''; $('modes').classList.add('hidden');
+    } catch (err) {
+      show($('msg'), 'err', '❌ ' + err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Publicar no Instagram';
+    }
+  };
+</script>
+</body>
+</html>
