@@ -1,0 +1,33 @@
+# Deploy no Render: New → Blueprint → escolha este repositório.
+# Os valores com "sync: false" são pedidos na hora (veja o .env.example e o README).
+services:
+  - type: web
+    name: postar-instagram
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: WA_ACCESS_TOKEN
+        sync: false
+      - key: WA_PHONE_NUMBER_ID
+        sync: false
+      - key: WA_VERIFY_TOKEN
+        generateValue: true
+      - key: WA_APP_SECRET
+        sync: false
+      - key: WA_ALLOWED_NUMBERS
+        sync: false
+      - key: IG_USER_ID
+        value: me
+      - key: GRAPH_HOST
+        value: graph.instagram.com
+      - key: DRY_RUN
+        value: "false"
