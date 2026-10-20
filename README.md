@@ -1,6 +1,6 @@
 # 📸 Postar no Instagram (WhatsApp + site)
 
-Publica fotos no Instagram do trabalho de dois jeitos:
+Publica fotos e vídeos no Instagram do trabalho de dois jeitos:
 
 - **Bot do WhatsApp:** você manda a foto com o texto da publicação na legenda e ele publica sozinho
 - **Site:** você abre no celular, escolhe as fotos, escreve a legenda e toca em **Publicar**
@@ -12,9 +12,10 @@ Os dois podem ficar ligados ao mesmo tempo, ou só um deles.
 | Você manda | O bot faz |
 |---|---|
 | 1 foto com legenda | Publica a foto com esse texto |
-| Várias fotos de uma vez (até 10) | Publica um **carrossel**, usando a legenda que você escreveu |
+| 1 vídeo com legenda | Publica como **Reels** |
+| Várias fotos/vídeos de uma vez (até 10) | Publica um **carrossel**, usando a legenda que você escreveu |
 | Foto sem legenda e, logo depois, um texto | Usa o texto como legenda |
-| `cancelar` | Descarta as fotos que ainda não foram publicadas |
+| `cancelar` | Descarta o que ainda não foi publicado |
 | Qualquer outro texto | Mostra a ajuda |
 
 O bot espera 15 segundos depois da última foto (`WA_ALBUM_WAIT_SECONDS`) antes de publicar. Esse tempo serve para juntar as fotos de um álbum. Depois ele responde com o link do post. Só os números em `WA_ALLOWED_NUMBERS` conseguem publicar; os outros são ignorados.
@@ -91,6 +92,9 @@ Com `DRY_RUN=true`, o app processa as fotos e responde no WhatsApp, mas **não p
 ## Limites do Instagram
 
 - Até 100 publicações pela API a cada 24h
-- Só fotos (JPEG); vídeos e Reels não são suportados nesta versão
+- Fotos são convertidas para JPEG automaticamente
+- Vídeos precisam estar em MP4 ou MOV (o padrão da câmera do celular); Reels de 3 s a 15 min, vídeos de carrossel de até 60 s
+- O Instagram leva de 1 a 3 minutos para processar um vídeo
+- O WhatsApp comprime os vídeos; para manter a qualidade, envie **como documento**
 - No carrossel, todas as fotos ficam com a proporção da primeira (o app recorta mantendo a parte mais importante)
 - Legenda de no máximo 2.200 caracteres e 30 hashtags

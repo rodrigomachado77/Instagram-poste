@@ -20,14 +20,14 @@ if (!APP_PASSWORD && !whatsapp.enabled) {
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024, files: 10 },
-  fileFilter: (_req, file, cb) => cb(null, file.mimetype.startsWith('image/')),
+  limits: { fileSize: 100 * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, cb) => cb(null, /^(image|video)\//.test(file.mimetype)),
 });
 
 // Usado pela hospedagem (ex.: Render) para saber se o app está no ar.
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// O Instagram baixa as fotos daqui, por isso esta pasta precisa ser pública.
+// O Instagram baixa as fotos e vídeos daqui, por isso esta pasta precisa ser pública.
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1h' }));
 
 if (whatsapp.enabled) app.use('/webhook', whatsapp.router);
@@ -48,10 +48,10 @@ if (APP_PASSWORD) {
 
   app.post('/api/post', requirePassword, upload.array('photos', 10), async (req, res) => {
     const files = req.files || [];
-    if (!files.length) return res.status(400).json({ error: 'Envie pelo menos uma foto' });
+    if (!files.length) return res.status(400).json({ error: 'Envie pelo menos uma foto ou vídeo' });
     try {
       const mode = req.body.mode === 'separate' ? 'separate' : 'carousel';
-      const result = await publish(files.map((f) => f.buffer), req.body.caption, mode);
+      const result = await publish(files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), req.body.caption, mode);
       res.json({ ok: true, ...result });
     } catch (err) {
       console.error(err);
