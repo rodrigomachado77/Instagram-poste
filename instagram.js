@@ -35,8 +35,19 @@ async function prepareImage(buffer, forceRatio) {
     .resize(outW, outH, { fit: 'cover', position: 'attention' })
     .jpeg({ quality: 90, mozjpeg: true })
     .toFile(path.join(UPLOAD_DIR, name));
-  const base = (PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
-  return { url: `${base}/uploads/${name}`, ratio };
+  return { url: publicUrl(name), ratio };
+}
+
+const publicUrl = (name) => `${(PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '')}/uploads/${name}`;
+const isVideo = (mimetype) => /^video\//.test(mimetype || '');
+
+// O Instagram aceita vídeo MP4 ou MOV; salvamos como veio, sem converter.
+async function prepareVideo(buffer, mimetype) {
+  const ext = { 'video/mp4': 'mp4', 'video/quicktime': 'mov' }[mimetype];
+  if (!ext) throw new Error(`Formato de vídeo não suportado (${mimetype}). Envie em MP4 ou MOV.`);
+  const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
+  await fs.promises.writeFile(path.join(UPLOAD_DIR, name), buffer);
+  return { url: publicUrl(name) };
 }
 
 // O token do Instagram vence em ~60 dias; renovar estende a validade. Roda ao iniciar e uma vez por dia.
@@ -74,14 +85,15 @@ async function graph(method, endpoint, params = {}) {
   return data;
 }
 
+// Vídeos podem levar alguns minutos para o Instagram processar; espera até 5 min.
 async function waitUntilReady(containerId) {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 100; i++) {
     const { status_code } = await graph('GET', containerId, { fields: 'status_code' });
     if (status_code === 'FINISHED') return;
     if (status_code === 'ERROR' || status_code === 'EXPIRED') {
       throw new Error(`O Instagram não conseguiu processar a mídia (${status_code})`);
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 3000));
   }
   throw new Error('Tempo esgotado esperando o Instagram processar a mídia');
 }
@@ -93,15 +105,20 @@ async function publishContainer(containerId) {
   return { id, permalink };
 }
 
-async function postSingle(imageUrl, caption) {
-  const { id } = await graph('POST', `${IG_USER_ID}/media`, { image_url: imageUrl, caption });
+// Um vídeo sozinho vira Reels; num carrossel, entra como VIDEO.
+const mediaParams = (m, inCarousel) => m.video
+  ? { media_type: inCarousel ? 'VIDEO' : 'REELS', video_url: m.url }
+  : { image_url: m.url };
+
+async function postSingle(media, caption) {
+  const { id } = await graph('POST', `${IG_USER_ID}/media`, { ...mediaParams(media, false), caption });
   return publishContainer(id);
 }
 
-async function postCarousel(imageUrls, caption) {
+async function postCarousel(medias, caption) {
   const children = [];
-  for (const image_url of imageUrls) {
-    const { id } = await graph('POST', `${IG_USER_ID}/media`, { image_url, is_carousel_item: 'true' });
+  for (const m of medias) {
+    const { id } = await graph('POST', `${IG_USER_ID}/media`, { ...mediaParams(m, true), is_carousel_item: 'true' });
     children.push(id);
   }
   for (const child of children) await waitUntilReady(child);
@@ -113,31 +130,35 @@ async function postCarousel(imageUrls, caption) {
   return publishContainer(id);
 }
 
-// Recebe as fotos (buffers) e publica. mode: 'carousel' ou 'separate'.
-async function publish(buffers, caption, mode = 'carousel') {
+// Recebe fotos e vídeos ({ buffer, mimetype }) e publica. mode: 'carousel' ou 'separate'.
+async function publish(files, caption, mode = 'carousel') {
   caption = (caption || DEFAULT_CAPTION).slice(0, 2200);
-  if (buffers.length === 1) mode = 'separate';
+  if (files.length === 1) mode = 'separate';
 
-  const urls = [];
+  const medias = [];
   let ratio;
-  for (const b of buffers) {
-    const img = await prepareImage(b, mode === 'carousel' ? ratio : undefined);
-    ratio = img.ratio;
-    urls.push(img.url);
+  for (const f of files) {
+    if (isVideo(f.mimetype)) {
+      medias.push({ video: true, ...(await prepareVideo(f.buffer, f.mimetype)) });
+    } else {
+      const img = await prepareImage(f.buffer, mode === 'carousel' ? ratio : undefined);
+      ratio = img.ratio;
+      medias.push({ video: false, url: img.url });
+    }
   }
 
   if (dryRun) {
-    console.log('[DRY_RUN] publicaria:', { mode, caption, urls });
-    return { dryRun: true, posts: urls.map((u) => ({ permalink: u })) };
+    console.log('[DRY_RUN] publicaria:', { mode, caption, medias });
+    return { dryRun: true, posts: medias.map((m) => ({ permalink: m.url })) };
   }
 
   const posts = [];
-  if (mode === 'carousel') posts.push(await postCarousel(urls, caption));
-  else for (const u of urls) posts.push(await postSingle(u, caption));
+  if (mode === 'carousel') posts.push(await postCarousel(medias, caption));
+  else for (const m of medias) posts.push(await postSingle(m, caption));
   return { posts };
 }
 
-// Apaga fotos com mais de 24h (o Instagram já terá copiado).
+// Apaga arquivos com mais de 24h (o Instagram já terá copiado).
 setInterval(() => {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   for (const f of fs.readdirSync(UPLOAD_DIR)) {

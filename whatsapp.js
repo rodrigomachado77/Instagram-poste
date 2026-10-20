@@ -23,10 +23,11 @@ const allowed = new Set(WA_ALLOWED_NUMBERS.split(',').map(normalize).filter(Bool
 
 const HELP =
   '📸 *Bot do Instagram*\n\n' +
-  'Envie uma foto com o texto da publicação na legenda e eu publico no Instagram.\n\n' +
-  '• Várias fotos de uma vez viram um *carrossel* (até 10)\n' +
+  'Envie uma foto ou vídeo com o texto da publicação na legenda e eu publico no Instagram.\n\n' +
+  '• Um vídeo sozinho vira *Reels*\n' +
+  '• Várias fotos/vídeos de uma vez viram um *carrossel* (até 10)\n' +
   '• Esqueceu a legenda? Mande o texto logo em seguida, em até ' + WA_ALBUM_WAIT_SECONDS + 's\n' +
-  '• *cancelar* descarta as fotos que ainda não foram publicadas';
+  '• *cancelar* descarta o que ainda não foi publicado';
 
 async function waApi(endpoint, options = {}) {
   const url = /^https?:\/\//.test(endpoint) ? endpoint : `${WA_GRAPH_BASE}/${endpoint}`;
@@ -56,7 +57,7 @@ async function downloadMedia(mediaId) {
 }
 
 // Fotos enviadas juntas chegam como mensagens separadas; espera alguns segundos e junta tudo.
-const pending = new Map(); // número -> { images: [], caption, timer }
+const pending = new Map(); // número -> { items: [{ id, mimetype }], caption, timer }
 
 function schedule(from) {
   const p = pending.get(from);
@@ -67,14 +68,15 @@ function schedule(from) {
 async function flush(from) {
   const p = pending.get(from);
   pending.delete(from);
-  if (!p?.images.length) return;
+  if (!p?.items.length) return;
 
-  const n = p.images.length;
-  await reply(from, `⏳ Publicando ${n > 1 ? `carrossel com ${n} fotos` : 'a foto'}…`);
+  const n = p.items.length;
+  const what = n > 1 ? `carrossel com ${n} itens` : p.items[0].mimetype.startsWith('video/') ? 'o Reels' : 'a foto';
+  await reply(from, `⏳ Publicando ${what}…`);
   try {
-    const buffers = [];
-    for (const id of p.images) buffers.push(await downloadMedia(id));
-    const result = await publish(buffers, p.caption, 'carousel');
+    const files = [];
+    for (const it of p.items) files.push({ buffer: await downloadMedia(it.id), mimetype: it.mimetype });
+    const result = await publish(files, p.caption, 'carousel');
     const link = result.posts[0]?.permalink;
     await reply(from, result.dryRun
       ? `✅ Teste OK: nada foi publicado de verdade (DRY_RUN).\nLegenda: ${p.caption || '(vazia)'}`
@@ -98,23 +100,27 @@ async function handleMessage(msg) {
     return;
   }
 
-  // Foto normal, ou foto enviada "como documento" (comum no iPhone para manter a qualidade).
+  // Foto ou vídeo normal, ou enviado "como documento" (comum no iPhone para manter a qualidade).
   const media = msg.type === 'image' ? msg.image
-    : msg.type === 'document' && /^image\//.test(msg.document.mime_type) ? msg.document
+    : msg.type === 'video' ? msg.video
+    : msg.type === 'document' && /^(image|video)\//.test(msg.document.mime_type) ? msg.document
     : null;
 
   if (media) {
     if (/hei[cf]/i.test(media.mime_type)) {
       return reply(from, '⚠️ Essa foto está em HEIC, formato do iPhone que o Instagram não aceita. Envie como foto normal (não como documento), que o WhatsApp converte sozinho.');
     }
-    const p = pending.get(from) || { images: [], caption: '' };
+    if (/^video\//.test(media.mime_type) && !/^video\/(mp4|quicktime)$/.test(media.mime_type)) {
+      return reply(from, '⚠️ Esse vídeo não está em MP4 ou MOV, formatos que o Instagram aceita. Grave pela câmera do celular e envie de novo.');
+    }
+    const p = pending.get(from) || { items: [], caption: '' };
     pending.set(from, p);
-    if (p.images.length >= 10) {
+    if (p.items.length >= 10) {
       if (p.warned) return;
       p.warned = true;
       return reply(from, '⚠️ O Instagram aceita no máximo 10 fotos por carrossel; ignorei as extras.');
     }
-    p.images.push(media.id);
+    p.items.push({ id: media.id, mimetype: media.mime_type });
     if (media.caption && !p.caption) p.caption = media.caption;
     return schedule(from);
   }
@@ -124,7 +130,7 @@ async function handleMessage(msg) {
     const p = pending.get(from);
     if (/^cancelar$/i.test(text)) {
       if (p) { clearTimeout(p.timer); pending.delete(from); }
-      return reply(from, p ? '🗑️ Fotos descartadas.' : 'Não há nada pendente.');
+      return reply(from, p ? '🗑️ Descartado.' : 'Não há nada pendente.');
     }
     if (p && !p.caption) {
       p.caption = text;
@@ -133,7 +139,7 @@ async function handleMessage(msg) {
     return reply(from, HELP);
   }
 
-  return reply(from, '⚠️ Por enquanto só consigo publicar fotos.\n\n' + HELP);
+  return reply(from, '⚠️ Só consigo publicar fotos e vídeos.\n\n' + HELP);
 }
 
 const router = express.Router();
