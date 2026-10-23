@@ -14,6 +14,8 @@ Os dois podem ficar ligados ao mesmo tempo, ou só um deles.
 | 1 foto com legenda | Publica a foto com esse texto |
 | 1 vídeo com legenda | Publica como **Reels** |
 | Várias fotos/vídeos de uma vez (até 10) | Publica um **carrossel**, usando a legenda que você escreveu |
+| Foto(s)/vídeo(s) com a legenda `story` | Publica **só no Story** (cada arquivo vira um Story) |
+| Foto(s)/vídeo(s) com a legenda `story + texto` | Publica **no feed** (com o texto) **e no Story** |
 | Foto sem legenda e, logo depois, um texto | Usa o texto como legenda |
 | `cancelar` | Descarta o que ainda não foi publicado |
 | Qualquer outro texto | Mostra a ajuda |
@@ -95,6 +97,7 @@ Com `DRY_RUN=true`, o app processa as fotos e responde no WhatsApp, mas **não p
 - Fotos são convertidas para JPEG automaticamente
 - Vídeos precisam estar em MP4 ou MOV (o padrão da câmera do celular); Reels de 3 s a 15 min, vídeos de carrossel de até 60 s
 - O Instagram leva de 1 a 3 minutos para processar um vídeo
+- Story não tem legenda; fotos não são cortadas (o Instagram ajusta à tela, ideal 9:16); vídeos de Story até 60 s
 - O WhatsApp comprime os vídeos; para manter a qualidade, envie **como documento**
 - No carrossel, todas as fotos ficam com a proporção da primeira (o app recorta mantendo a parte mais importante)
 - Legenda de no máximo 2.200 caracteres e 30 hashtags

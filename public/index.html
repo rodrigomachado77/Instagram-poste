@@ -67,8 +67,10 @@
       </label>
       <div id="preview" class="grid"></div>
       <div id="modes" class="modes hidden">
-        <label><input type="radio" name="mode" value="carousel" checked><span>Um carrossel</span></label>
-        <label><input type="radio" name="mode" value="separate"><span>Posts separados</span></label>
+        <label data-multi><input type="radio" name="mode" value="carousel" checked><span>Um carrossel</span></label>
+        <label data-multi><input type="radio" name="mode" value="separate"><span>Posts separados</span></label>
+        <label data-single><input type="radio" name="mode" value="feed"><span>Post no feed</span></label>
+        <label><input type="radio" name="mode" value="story"><span>Story</span></label>
       </div>
     </div>
 
@@ -122,7 +124,15 @@
       if (el.tagName === 'VIDEO') { el.muted = true; el.playsInline = true; }
       $('preview').appendChild(el);
     });
-    $('modes').classList.toggle('hidden', files.length < 2);
+    // Com 1 arquivo: "Post no feed" ou "Story"; com vários: carrossel, posts separados ou Story.
+    const multi = files.length > 1;
+    document.querySelectorAll('[data-multi]').forEach((l) => l.classList.toggle('hidden', !multi));
+    document.querySelectorAll('[data-single]').forEach((l) => l.classList.toggle('hidden', multi));
+    const checked = document.querySelector('input[name=mode]:checked');
+    if (checked.closest('label').classList.contains('hidden')) {
+      document.querySelector(multi ? '[data-multi] input' : '[data-single] input').checked = true;
+    }
+    $('modes').classList.toggle('hidden', !files.length);
     $('msg').className = 'msg';
   };
 
@@ -143,7 +153,8 @@
       const r = await fetch('api/post', { method: 'POST', headers: { 'x-app-password': password }, body: data });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || 'Erro desconhecido');
-      const links = json.posts.map((p) => p.permalink ? `<a href="${p.permalink}" target="_blank" rel="noopener">ver post</a>` : 'publicado').join(' · ');
+      const links = json.posts.map((p) => p.story ? 'Story publicado'
+        : p.permalink ? `<a href="${p.permalink}" target="_blank" rel="noopener">ver post</a>` : 'publicado').join(' · ');
       show($('msg'), 'ok', (json.dryRun ? '✅ Teste OK (nada foi publicado de verdade): ' : '✅ Publicado! ') + links);
       $('form').reset(); $('preview').innerHTML = ''; $('modes').classList.add('hidden');
     } catch (err) {

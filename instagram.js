@@ -18,13 +18,15 @@ const dryRun = DRY_RUN === 'true';
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+const UNSUPPORTED_IMAGE = 'Formato de imagem não suportado. Se for HEIC do iPhone, envie como JPEG.';
+
 // O Instagram só aceita JPEG com proporção entre 4:5 (retrato) e 1.91:1 (paisagem).
 // forceRatio: no carrossel, todas as fotos usam a proporção da primeira (senão o Instagram corta pelo centro).
 async function prepareImage(buffer, forceRatio) {
   const img = sharp(buffer, { failOn: 'none' }).rotate(); // aplica a orientação EXIF
   const { width, height } = await img.metadata().then(
     (m) => (m.orientation >= 5 ? { width: m.height, height: m.width } : m),
-    () => { throw new Error('Formato de imagem não suportado. Se for HEIC do iPhone, envie como JPEG.'); }
+    () => { throw new Error(UNSUPPORTED_IMAGE); }
   );
   const ratio = forceRatio || Math.min(Math.max(width / height, 0.8), 1.91);
   const outW = Math.min(1440, width, Math.round(height * ratio));
@@ -36,6 +38,18 @@ async function prepareImage(buffer, forceRatio) {
     .jpeg({ quality: 90, mozjpeg: true })
     .toFile(path.join(UPLOAD_DIR, name));
   return { url: publicUrl(name), ratio };
+}
+
+// No Story a foto não é cortada: só reduzimos para caber em 1080x1920, e o Instagram ajusta à tela.
+async function prepareStoryImage(buffer) {
+  const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
+  await sharp(buffer, { failOn: 'none' })
+    .rotate()
+    .resize(1080, 1920, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toFile(path.join(UPLOAD_DIR, name))
+    .catch(() => { throw new Error(UNSUPPORTED_IMAGE); });
+  return { url: publicUrl(name) };
 }
 
 const publicUrl = (name) => `${(PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '')}/uploads/${name}`;
@@ -110,6 +124,21 @@ const mediaParams = (m, inCarousel) => m.video
   ? { media_type: inCarousel ? 'VIDEO' : 'REELS', video_url: m.url }
   : { image_url: m.url };
 
+async function postStory(media) {
+  const { id } = await graph('POST', `${IG_USER_ID}/media`, {
+    media_type: 'STORIES',
+    [media.video ? 'video_url' : 'image_url']: media.url,
+  });
+  return { ...(await publishContainer(id)), story: true };
+}
+
+// Legenda "story" publica só no Story; "story + texto" publica no feed (com o texto) e no Story.
+function parseStory(caption = '') {
+  const m = String(caption).trim().match(/^story\s*(\+\s*([\s\S]*))?$/i);
+  if (!m) return { story: false, caption };
+  return m[1] ? { story: 'also', caption: m[2].trim() } : { story: 'only', caption: '' };
+}
+
 async function postSingle(media, caption) {
   const { id } = await graph('POST', `${IG_USER_ID}/media`, { ...mediaParams(media, false), caption });
   return publishContainer(id);
@@ -130,31 +159,46 @@ async function postCarousel(medias, caption) {
   return publishContainer(id);
 }
 
-// Recebe fotos e vídeos ({ buffer, mimetype }) e publica. mode: 'carousel' ou 'separate'.
-async function publish(files, caption, mode = 'carousel') {
+// Recebe fotos e vídeos ({ buffer, mimetype }) e publica.
+// mode: 'carousel', 'separate' ou 'story' (só Story). alsoStory: publica no feed e também no Story.
+async function publish(files, caption, mode = 'carousel', alsoStory = false) {
   caption = (caption || DEFAULT_CAPTION).slice(0, 2200);
-  if (files.length === 1) mode = 'separate';
+  const toFeed = mode !== 'story';
+  const toStory = mode === 'story' || alsoStory;
+  if (files.length === 1 && toFeed) mode = 'separate';
 
   const medias = [];
+  const stories = [];
   let ratio;
   for (const f of files) {
     if (isVideo(f.mimetype)) {
-      medias.push({ video: true, ...(await prepareVideo(f.buffer, f.mimetype)) });
-    } else {
+      const video = { video: true, ...(await prepareVideo(f.buffer, f.mimetype)) };
+      if (toFeed) medias.push(video);
+      if (toStory) stories.push(video);
+      continue;
+    }
+    if (toFeed) {
       const img = await prepareImage(f.buffer, mode === 'carousel' ? ratio : undefined);
       ratio = img.ratio;
       medias.push({ video: false, url: img.url });
     }
+    if (toStory) stories.push({ video: false, ...(await prepareStoryImage(f.buffer)) });
   }
 
   if (dryRun) {
-    console.log('[DRY_RUN] publicaria:', { mode, caption, medias });
-    return { dryRun: true, posts: medias.map((m) => ({ permalink: m.url })) };
+    console.log('[DRY_RUN] publicaria:', { mode, caption, medias, stories });
+    return {
+      dryRun: true,
+      posts: [...medias.map((m) => ({ permalink: m.url })), ...stories.map((m) => ({ permalink: m.url, story: true }))],
+    };
   }
 
   const posts = [];
-  if (mode === 'carousel') posts.push(await postCarousel(medias, caption));
-  else for (const m of medias) posts.push(await postSingle(m, caption));
+  if (toFeed) {
+    if (mode === 'carousel') posts.push(await postCarousel(medias, caption));
+    else for (const m of medias) posts.push(await postSingle(m, caption));
+  }
+  for (const s of stories) posts.push(await postStory(s));
   return { posts };
 }
 
@@ -167,4 +211,4 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000).unref();
 
-module.exports = { publish, dryRun, UPLOAD_DIR };
+module.exports = { publish, parseStory, dryRun, UPLOAD_DIR };
