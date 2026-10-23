@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { publish } = require('./instagram');
+const { publish, parseStory } = require('./instagram');
 
 const {
   WA_ACCESS_TOKEN,
@@ -26,6 +26,7 @@ const HELP =
   'Envie uma foto ou vídeo com o texto da publicação na legenda e eu publico no Instagram.\n\n' +
   '• Um vídeo sozinho vira *Reels*\n' +
   '• Várias fotos/vídeos de uma vez viram um *carrossel* (até 10)\n' +
+  '• Legenda *story* publica só no Story; *story + texto* publica no feed e no Story\n' +
   '• Esqueceu a legenda? Mande o texto logo em seguida, em até ' + WA_ALBUM_WAIT_SECONDS + 's\n' +
   '• *cancelar* descarta o que ainda não foi publicado';
 
@@ -71,16 +72,20 @@ async function flush(from) {
   if (!p?.items.length) return;
 
   const n = p.items.length;
-  const what = n > 1 ? `carrossel com ${n} itens` : p.items[0].mimetype.startsWith('video/') ? 'o Reels' : 'a foto';
+  const { story, caption } = parseStory(p.caption);
+  const what = story === 'only' ? (n > 1 ? `${n} stories` : 'o Story')
+    : (n > 1 ? `carrossel com ${n} itens` : p.items[0].mimetype.startsWith('video/') ? 'o Reels' : 'a foto')
+      + (story === 'also' ? ' e o Story' : '');
   await reply(from, `⏳ Publicando ${what}…`);
   try {
     const files = [];
     for (const it of p.items) files.push({ buffer: await downloadMedia(it.id), mimetype: it.mimetype });
-    const result = await publish(files, p.caption, 'carousel');
-    const link = result.posts[0]?.permalink;
+    const result = await publish(files, caption, story === 'only' ? 'story' : 'carousel', story === 'also');
+    const link = result.posts.find((x) => !x.story)?.permalink;
+    const storyNote = result.posts.some((x) => x.story) ? '\n📲 Story publicado' : '';
     await reply(from, result.dryRun
-      ? `✅ Teste OK: nada foi publicado de verdade (DRY_RUN).\nLegenda: ${p.caption || '(vazia)'}`
-      : `✅ Publicado no Instagram!${link ? `\n${link}` : ''}`);
+      ? `✅ Teste OK: nada foi publicado de verdade (DRY_RUN).\nLegenda: ${caption || '(vazia)'}${storyNote}`
+      : `✅ Publicado no Instagram!${link ? `\n${link}` : ''}${storyNote}`);
   } catch (err) {
     console.error(err);
     await reply(from, `❌ Não consegui publicar: ${err.message}`);

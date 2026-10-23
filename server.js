@@ -50,7 +50,7 @@ if (APP_PASSWORD) {
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ error: 'Envie pelo menos uma foto ou vídeo' });
     try {
-      const mode = req.body.mode === 'separate' ? 'separate' : 'carousel';
+      const mode = ['separate', 'story'].includes(req.body.mode) ? req.body.mode : 'carousel';
       const result = await publish(files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), req.body.caption, mode);
       res.json({ ok: true, ...result });
     } catch (err) {
