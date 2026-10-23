@@ -12,6 +12,9 @@ const {
   GRAPH_API_VERSION = 'v23.0',
   DEFAULT_CAPTION = '',
   DRY_RUN = 'false',
+  WATERMARK_POSITION = 'bottom-right',
+  WATERMARK_SIZE = '0.2',
+  WATERMARK_OPACITY = '0.8',
 } = process.env;
 
 const dryRun = DRY_RUN === 'true';
@@ -20,21 +23,47 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const UNSUPPORTED_IMAGE = 'Formato de imagem não suportado. Se for HEIC do iPhone, envie como JPEG.';
 
+// Marca d'água: se existir watermark.png na raiz do projeto, ela vai num canto de toda foto.
+let watermark = null;
+try { watermark = fs.readFileSync(path.join(__dirname, 'watermark.png')); } catch {}
+
+// Monta a camada da logo para uma foto de w x h: largura = WATERMARK_SIZE da foto, margem de 3%.
+async function watermarkLayer(w, h) {
+  const { data, info } = await sharp(watermark)
+    .resize(Math.round(w * Number(WATERMARK_SIZE)), Math.round(h * 0.3), { fit: 'inside' })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const opacity = Number(WATERMARK_OPACITY);
+  for (let i = info.channels - 1; i < data.length; i += info.channels) data[i] = Math.round(data[i] * opacity);
+
+  const m = Math.round(Math.min(w, h) * 0.03);
+  const pos = WATERMARK_POSITION;
+  const left = pos.includes('left') ? m : pos.includes('right') ? w - info.width - m : Math.round((w - info.width) / 2);
+  const top = pos.includes('top') ? m : pos.includes('bottom') ? h - info.height - m : Math.round((h - info.height) / 2);
+  return { input: data, raw: { width: info.width, height: info.height, channels: info.channels }, left, top };
+}
+
+const withWatermark = async (img, w, h) => (watermark ? img.composite([await watermarkLayer(w, h)]) : img);
+
+// Tamanho da foto já na orientação certa (fotos do celular vêm "deitadas" com uma marcação EXIF).
+const orientedSize = (img) => img.metadata().then(
+  (m) => (m.orientation >= 5 ? { width: m.height, height: m.width } : m),
+  () => { throw new Error(UNSUPPORTED_IMAGE); }
+);
+
 // O Instagram só aceita JPEG com proporção entre 4:5 (retrato) e 1.91:1 (paisagem).
 // forceRatio: no carrossel, todas as fotos usam a proporção da primeira (senão o Instagram corta pelo centro).
 async function prepareImage(buffer, forceRatio) {
   const img = sharp(buffer, { failOn: 'none' }).rotate(); // aplica a orientação EXIF
-  const { width, height } = await img.metadata().then(
-    (m) => (m.orientation >= 5 ? { width: m.height, height: m.width } : m),
-    () => { throw new Error(UNSUPPORTED_IMAGE); }
-  );
+  const { width, height } = await orientedSize(img);
   const ratio = forceRatio || Math.min(Math.max(width / height, 0.8), 1.91);
   const outW = Math.min(1440, width, Math.round(height * ratio));
   const outH = Math.round(outW / ratio);
 
   const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
-  await img
-    .resize(outW, outH, { fit: 'cover', position: 'attention' })
+  const resized = img.resize(outW, outH, { fit: 'cover', position: 'attention' });
+  await (await withWatermark(resized, outW, outH))
     .jpeg({ quality: 90, mozjpeg: true })
     .toFile(path.join(UPLOAD_DIR, name));
   return { url: publicUrl(name), ratio };
@@ -42,10 +71,14 @@ async function prepareImage(buffer, forceRatio) {
 
 // No Story a foto não é cortada: só reduzimos para caber em 1080x1920, e o Instagram ajusta à tela.
 async function prepareStoryImage(buffer) {
+  const img = sharp(buffer, { failOn: 'none' }).rotate();
+  const { width, height } = await orientedSize(img);
+  const scale = Math.min(1080 / width, 1920 / height, 1);
+  const outW = Math.round(width * scale);
+  const outH = Math.round(height * scale);
+
   const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
-  await sharp(buffer, { failOn: 'none' })
-    .rotate()
-    .resize(1080, 1920, { fit: 'inside', withoutEnlargement: true })
+  await (await withWatermark(img.resize(outW, outH), outW, outH))
     .jpeg({ quality: 90, mozjpeg: true })
     .toFile(path.join(UPLOAD_DIR, name))
     .catch(() => { throw new Error(UNSUPPORTED_IMAGE); });

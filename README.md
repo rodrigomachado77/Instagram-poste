@@ -91,6 +91,11 @@ npm start                 # site em http://localhost:3000
 
 Com `DRY_RUN=true`, o app processa as fotos e responde no WhatsApp, mas **não publica nada no Instagram**.
 
+## Marca d'água
+
+Se existir um arquivo `watermark.png` na raiz do projeto, a logo é colocada em toda foto, tanto no feed quanto no Story. Vídeos não recebem a marca.
+Use uma logo **PNG com fundo transparente**. Para ajustar posição, tamanho e transparência, use as variáveis `WATERMARK_*` do `.env.example`.
+
 ## Limites do Instagram
 
 - Até 100 publicações pela API a cada 24h
